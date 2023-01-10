@@ -1,4 +1,4 @@
-use std::{path::Path, ffi::OsStr};
+use std::{ffi::OsStr, path::Path};
 
 #[macro_use]
 extern crate lazy_static;
@@ -13,21 +13,45 @@ pub enum Error<'a> {
     #[error("unable to open file")]
     OpenFile(#[from] std::io::Error),
     #[error("failed to parse date '{parsing}' from {filename:?}: {reason}")]
-    DateParse { parsing: String, filename: &'a OsStr, reason: String },
+    DateParse {
+        parsing: String,
+        filename: &'a OsStr,
+        reason: String,
+    },
     #[error("no date identified in '{0}'")]
     NoDate(String),
+
+    #[error("extracting date from exif: '{0}'")]
+    ExtractExifDate(String),
 }
 
 pub fn run<'a>(args: Args) -> Result<(), Error<'a>> {
     for file in args.files {
         let path = Path::new(&file);
+        let filename = path.file_name().unwrap();
         match get_date_from_file(&path) {
             Ok(date) => {
-                println!("{}", format!("extracted date='{}' from file={:?}", date, path.file_name().unwrap()).blue())
-            },
+                println!(
+                    "{}",
+                    format!("[{:?}] extracted date from filename '{}'", filename, date).blue()
+                );
+                let existing_date_in_exif = get_datetime_from_metadata(&file);
+                match existing_date_in_exif {
+                    Some(exifdate) => {
+                        println!(
+                            "{}",
+                            format!("[{:?}] date already found in exif {:?}", filename, exifdate)
+                                .yellow()
+                        );
+                        let delta = (exifdate - date).num_days();
+                        // TODO - if delta > 1 set date - need to refactor this giant nested match first
+                    }
+                    None => println!("{}", format!("[{:?}]======", filename).blue()),
+                }
+            }
             Err(err) => {
-                println!("{}", format!("{}", err.to_string()).yellow())
-            },
+                println!("{}", format!("{}", err.to_string()).red())
+            }
         }
     }
     Ok(())
@@ -36,19 +60,25 @@ pub fn run<'a>(args: Args) -> Result<(), Error<'a>> {
 fn get_date_from_file(path: &Path) -> Result<chrono::DateTime<chrono::Utc>, Error> {
     match extract_date_with_regex(path.to_str().unwrap()) {
         Some(date_string) => {
-            let datetime= date_string.replace("_", "-");
+            let datetime = date_string.replace("_", "-");
 
             let good_datetimes = get_date_time_parts(&datetime);
-            
+
             let date_to_parse = match good_datetimes {
                 (Some(date), Some(time)) => format!("{} {}", date, time),
                 (Some(date), None) => format!("{}", date),
-                (None, Some(_)) | (None, None) => datetime
+                (None, Some(_)) | (None, None) => datetime,
             };
 
-            dateparser::parse(&date_to_parse).map_err(|err| Error::DateParse { parsing: date_to_parse, filename: path.file_name().unwrap(), reason: err.to_string() })
-        },
-        None => Err(Error::NoDate(path.file_name().unwrap().to_str().unwrap().to_string()))
+            dateparser::parse(&date_to_parse).map_err(|err| Error::DateParse {
+                parsing: date_to_parse,
+                filename: path.file_name().unwrap(),
+                reason: err.to_string(),
+            })
+        }
+        None => Err(Error::NoDate(
+            path.file_name().unwrap().to_str().unwrap().to_string(),
+        )),
     }
 }
 
@@ -57,7 +87,8 @@ fn get_date_time_parts(input: &str) -> (Option<String>, Option<String>) {
         static ref DATE_NOT_SPLIT: Regex = Regex::new(r#"^.*\b(\d{8})\b.*$"#).unwrap();
         static ref TIME_NOT_SPLIT: Regex = Regex::new(r#"^.*\b(\d{6})\b.*$"#).unwrap();
         static ref DATETIME_ALL_IN_ONE: Regex = Regex::new(r#"^.*\b(\d{8})(\d{6}).*\b$"#).unwrap();
-        static ref DATETIME_NOT_SEPARATED: Regex = Regex::new(r#"^.*(\d{4}-\d{2}-\d{2})-?(\d{2}-?\d{2}-?\d{2}).*$"#).unwrap();
+        static ref DATETIME_NOT_SEPARATED: Regex =
+            Regex::new(r#"^.*(\d{4}-\d{2}-\d{2})-?(\d{2}-?\d{2}-?\d{2}).*$"#).unwrap();
     }
 
     let split_date = |date: &str| format!("{}-{}-{}", &date[0..4], &date[4..6], &date[6..8]);
@@ -68,22 +99,25 @@ fn get_date_time_parts(input: &str) -> (Option<String>, Option<String>) {
     }
 
     if let Some(cap) = DATETIME_NOT_SEPARATED.captures(input) {
-        return (Some(cap[1].to_string()), Some(split_time(&cap[2].to_string().replace("-", ""))));
+        return (
+            Some(cap[1].to_string()),
+            Some(split_time(&cap[2].to_string().replace("-", ""))),
+        );
     }
 
     let new_date = match DATE_NOT_SPLIT.captures(input) {
         Some(cap) => {
             let date = &cap[1];
             Some(split_date(date))
-        },
+        }
         None => None,
     };
-    
+
     let new_time = match TIME_NOT_SPLIT.captures(input) {
         Some(cap) => {
             let time = &cap[1];
             Some(split_time(time))
-        },
+        }
         None => None,
     };
 
@@ -103,13 +137,26 @@ fn extract_date_with_regex(text: &str) -> Option<String> {
         NORMAL_DATE_RE.captures(text),
         WHATSAPP_DATE_RE.captures(text),
     ) {
-        (Some(normal), None) | (Some(normal), Some(_)) => {
-            Some(normal[1].to_string())
-        }
-        (None, Some(whatsapp)) => {
-            Some(whatsapp[1].to_string())
-        }
+        (Some(normal), None) | (Some(normal), Some(_)) => Some(normal[1].to_string()),
+        (None, Some(whatsapp)) => Some(whatsapp[1].to_string()),
         (None, None) => None,
+    }
+}
+
+fn get_datetime_from_metadata(path: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    let file = std::fs::File::open(path).ok()?;
+    let mut bufreader = std::io::BufReader::new(&file);
+
+    let exifreader = exif::Reader::new();
+    let exif = exifreader.read_from_container(&mut bufreader).ok()?;
+
+    let datetime_field = exif.get_field(exif::Tag::DateTime, exif::In::PRIMARY);
+    match datetime_field {
+        Some(date) => {
+            let datetime_value = date.display_value().to_string();
+            dateparser::parse(&datetime_value).ok()
+        }
+        None => None,
     }
 }
 
