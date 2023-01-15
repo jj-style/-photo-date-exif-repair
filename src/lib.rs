@@ -1,5 +1,4 @@
 use std::{
-    ffi::OsStr,
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -14,25 +13,10 @@ use threadpool;
 
 mod cli;
 pub use cli::Args;
+mod error;
+pub use error::Error;
 
 const DEFAULT_TIME: &'static str = "00:00:00";
-
-#[derive(thiserror::Error, Debug)]
-pub enum Error<'a> {
-    #[error("unable to open file")]
-    OpenFile(#[from] std::io::Error),
-    #[error("failed to parse date '{parsing}' from {filename:?}: {reason}")]
-    DateParse {
-        parsing: String,
-        filename: &'a OsStr,
-        reason: String,
-    },
-    #[error("no date identified in '{0:?}'")]
-    NoDate(&'a OsStr),
-
-    #[error("extracting date from exif: '{0}'")]
-    ExtractExifDate(String),
-}
 
 pub fn run<'a>(args: Args) -> Result<(), Error<'a>> {
     let (s, r) = unbounded();
