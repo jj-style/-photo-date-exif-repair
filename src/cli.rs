@@ -8,6 +8,10 @@ pub struct Args {
     #[arg(short, long)]
     pub dryrun: bool,
 
+    /// overwrite files when setting their date, or if false, saves a copy of the original.
+    #[arg(short, long)]
+    pub overwrite: bool,
+
     /// files to set date for
     pub files: Vec<String>,
 }

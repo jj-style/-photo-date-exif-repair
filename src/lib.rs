@@ -1,12 +1,21 @@
-use std::{ffi::OsStr, path::Path};
+use std::{
+    ffi::OsStr,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+};
 
 #[macro_use]
 extern crate lazy_static;
+use crossbeam::channel::{unbounded, Receiver};
+
+use colored::Colorize;
+use regex::Regex;
+use threadpool;
 
 mod cli;
 pub use cli::Args;
-use colored::Colorize;
-use regex::Regex;
+
+const DEFAULT_TIME: &'static str = "00:00:00";
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error<'a> {
@@ -18,56 +27,142 @@ pub enum Error<'a> {
         filename: &'a OsStr,
         reason: String,
     },
-    #[error("no date identified in '{0}'")]
-    NoDate(String),
+    #[error("no date identified in '{0:?}'")]
+    NoDate(&'a OsStr),
 
     #[error("extracting date from exif: '{0}'")]
     ExtractExifDate(String),
 }
 
 pub fn run<'a>(args: Args) -> Result<(), Error<'a>> {
+    let (s, r) = unbounded();
+
+    let pool = threadpool::ThreadPool::new(5);
+
+    for i in 0..5 {
+        let rx = r.clone();
+        pool.execute(move || work(rx, i, args.dryrun, args.overwrite));
+    }
+
     for file in args.files {
         let path = Path::new(&file);
-        let filename = path.file_name().unwrap();
-        match get_date_from_file(&path) {
-            Ok(date) => {
-                println!(
-                    "{}",
-                    format!("[{:?}] extracted date from filename '{}'", filename, date).blue()
-                );
-                let existing_date_in_exif = get_datetime_from_metadata(&file);
-                match existing_date_in_exif {
-                    Some(exifdate) => {
-                        println!(
-                            "{}",
-                            format!("[{:?}] date already found in exif {:?}", filename, exifdate)
-                                .yellow()
-                        );
-                        let delta = (exifdate - date).num_days();
-                        // TODO - if delta > 1 set date - need to refactor this giant nested match first
-                    }
-                    None => println!("{}", format!("[{:?}]======", filename).blue()),
-                }
-            }
+
+        let date = match get_date_from_file(&path) {
+            Ok(d) => d,
             Err(err) => {
-                println!("{}", format!("{}", err.to_string()).red())
+                eprint!("{}", format!("{}", err).red());
+                continue;
             }
+        };
+        println!(
+            "{}",
+            format!(
+                "[{:?}] extracted date from filename '{}'",
+                path.file_name().unwrap(),
+                date
+            )
+            .blue()
+        );
+
+        let existing_date_in_exif = get_datetime_from_metadata(&path);
+        if let Some(exifdate) = existing_date_in_exif {
+            println!(
+                "{}",
+                format!(
+                    "[{:?}] date already found in exif {:?}",
+                    path.file_name().unwrap(),
+                    exifdate
+                )
+                .yellow()
+            );
+            let _delta = (exifdate - date).num_days();
+            // TODO - if delta > 1 set date?
+            continue;
+        }
+
+        if let Err(err) = s.send((path.to_path_buf(), date)) {
+            eprint!(
+                "{}",
+                format!(
+                    "error adding {:?} to queue: {}",
+                    path.file_name().unwrap(),
+                    err
+                )
+                .red()
+            );
         }
     }
+    drop(s);
+    pool.join();
     Ok(())
 }
 
-fn get_date_from_file(path: &Path) -> Result<chrono::DateTime<chrono::Utc>, Error> {
+fn work(
+    r: Receiver<(PathBuf, chrono::DateTime<chrono::Utc>)>,
+    i: u8,
+    dryrun: bool,
+    overwrite: bool,
+) {
+    let msg = match r.recv() {
+        Ok(d) => d,
+        Err(_err) => {
+            return;
+        }
+    };
+    println!(
+        "[thread {}] setting date={} for file={:?}",
+        i,
+        msg.1.to_rfc3339(),
+        msg.0.file_name().unwrap()
+    );
+    let mut cmd = Command::new("exiftool");
+
+    if overwrite {
+        cmd.arg("-overwrite_original");
+    }
+
+    cmd.arg(format!("-AllDates=\"{}\"", msg.1.to_rfc3339(),))
+        .arg(format!("{}", msg.0.canonicalize().unwrap().display()))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null());
+
+    if dryrun {
+        println!("[dryrun] {:?}", cmd);
+        return;
+    }
+
+    match cmd.status() {
+        Ok(_) => println!(
+            "{}",
+            format!(
+                "[thread {}] successfully set date for {}",
+                i,
+                msg.0.display()
+            )
+            .green()
+        ),
+        Err(err) => eprintln!(
+            "{}",
+            format!(
+                "[thread {}] error setting date for {}: {}",
+                i,
+                msg.0.display(),
+                err
+            )
+            .red()
+        ),
+    };
+}
+
+fn get_date_from_file<'a>(path: &'a Path) -> Result<chrono::DateTime<chrono::Utc>, Error<'a>> {
     match extract_date_with_regex(path.to_str().unwrap()) {
         Some(date_string) => {
-            let datetime = date_string.replace("_", "-");
-
-            let good_datetimes = get_date_time_parts(&datetime);
+            let good_datetimes = get_date_time_parts(&date_string);
 
             let date_to_parse = match good_datetimes {
                 (Some(date), Some(time)) => format!("{} {}", date, time),
-                (Some(date), None) => format!("{}", date),
-                (None, Some(_)) | (None, None) => datetime,
+                (Some(date), None) => format!("{} {}", date, DEFAULT_TIME),
+                (None, Some(_)) | (None, None) => date_string,
             };
 
             dateparser::parse(&date_to_parse).map_err(|err| Error::DateParse {
@@ -76,12 +171,12 @@ fn get_date_from_file(path: &Path) -> Result<chrono::DateTime<chrono::Utc>, Erro
                 reason: err.to_string(),
             })
         }
-        None => Err(Error::NoDate(
-            path.file_name().unwrap().to_str().unwrap().to_string(),
-        )),
+        None => Err(Error::NoDate(path.file_name().unwrap())),
     }
 }
 
+/// Given a datetime string, returns the date and time as constituent parts formatted to normal
+/// standards.
 fn get_date_time_parts(input: &str) -> (Option<String>, Option<String>) {
     lazy_static! {
         static ref DATE_NOT_SPLIT: Regex = Regex::new(r#"^.*\b(\d{8})\b.*$"#).unwrap();
@@ -90,22 +185,23 @@ fn get_date_time_parts(input: &str) -> (Option<String>, Option<String>) {
         static ref DATETIME_NOT_SEPARATED: Regex =
             Regex::new(r#"^.*(\d{4}-\d{2}-\d{2})-?(\d{2}-?\d{2}-?\d{2}).*$"#).unwrap();
     }
+    let input = input.replace("_", "-");
 
     let split_date = |date: &str| format!("{}-{}-{}", &date[0..4], &date[4..6], &date[6..8]);
     let split_time = |time: &str| format!("{}:{}:{}", &time[0..2], &time[2..4], &time[4..6]);
 
-    if let Some(cap) = DATETIME_ALL_IN_ONE.captures(input) {
+    if let Some(cap) = DATETIME_ALL_IN_ONE.captures(&input) {
         return (Some(split_date(&cap[1])), Some(split_time(&cap[2])));
     }
 
-    if let Some(cap) = DATETIME_NOT_SEPARATED.captures(input) {
+    if let Some(cap) = DATETIME_NOT_SEPARATED.captures(&input) {
         return (
             Some(cap[1].to_string()),
             Some(split_time(&cap[2].to_string().replace("-", ""))),
         );
     }
 
-    let new_date = match DATE_NOT_SPLIT.captures(input) {
+    let new_date = match DATE_NOT_SPLIT.captures(&input) {
         Some(cap) => {
             let date = &cap[1];
             Some(split_date(date))
@@ -113,7 +209,7 @@ fn get_date_time_parts(input: &str) -> (Option<String>, Option<String>) {
         None => None,
     };
 
-    let new_time = match TIME_NOT_SPLIT.captures(input) {
+    let new_time = match TIME_NOT_SPLIT.captures(&input) {
         Some(cap) => {
             let time = &cap[1];
             Some(split_time(time))
@@ -124,6 +220,7 @@ fn get_date_time_parts(input: &str) -> (Option<String>, Option<String>) {
     (new_date, new_time)
 }
 
+/// Extracts a possible datetime string from some text
 fn extract_date_with_regex(text: &str) -> Option<String> {
     lazy_static! {
         static ref NORMAL_DATE_RE: Regex = Regex::new(
@@ -143,7 +240,7 @@ fn extract_date_with_regex(text: &str) -> Option<String> {
     }
 }
 
-fn get_datetime_from_metadata(path: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+fn get_datetime_from_metadata(path: &Path) -> Option<chrono::DateTime<chrono::Utc>> {
     let file = std::fs::File::open(path).ok()?;
     let mut bufreader = std::io::BufReader::new(&file);
 

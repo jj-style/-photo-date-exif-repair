@@ -7,7 +7,7 @@ import argparse
 
 date_regex = re.compile(r"^.*(20[0-9]{2}[-_]?[0-9]{2}[-_]?[0-9]{2}[-_]?([0-9]{6}|[0-9]{2}[-_][0-9]{2}[-_][0-9]{2})).*$")
 whatsapp_regex = re.compile(r"^.*(20\d{6})-WA.*$")
-extension_choices = ["jpeg", "jpg", "JPG", "mp4", "MP4"]
+extension_choices = ["jpeg", "jpg", "JPG", "mp4", "MP4", "png"]
 
 def main():
     parser = argparse.ArgumentParser()
