@@ -1,0 +1,27 @@
+kind: pipeline
+name: photo-date-exif-repair
+type: docker
+
+trigger:
+  branch:
+    - master
+
+steps:
+  - name: buildBinary
+    image: rust:1.66
+    pull: if-not-exists
+    commands:
+      - cargo build
+
+  - name: buildDocker
+    commands:
+    - docker build . -t photo-date-exif-repair
+  
+  - name: test
+    image: rust:1.66
+    pull: if-not-exists
+    commands:
+      cargo test
+    depends_on:
+    - buildBinary
+    - buildDocker
