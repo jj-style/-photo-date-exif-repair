@@ -4,29 +4,46 @@ use photo_date_exif_repair::{run, Args};
 use std::{fs::File, path::PathBuf};
 use tempfile::{tempdir, TempDir};
 
-struct TestData(PathBuf, TempDir);
+struct TestData {
+    file: PathBuf,
+    dir: TempDir
+}
+
+struct TestCaseHappy {
+    filename: String,
+    expected_datetime: chrono::DateTime<chrono::Local> 
+}
 
 #[test]
-fn test_date_rename_e2e() -> Result<(), Box<dyn std::error::Error>> {
-    // Arrange
-    let data = create_jpeg_with_filename("IMG_20210820_133000_image.jpg")?;
-    
-    // Act
-    let result = run(Args {
-        files: vec![data.0.to_str().unwrap().to_string()],
-        dryrun: false,
-        overwrite: true,
-    });
+fn test_set_date_from_filename_e2e() -> Result<(), Box<dyn std::error::Error>> {
+    let test_cases = vec![
+        TestCaseHappy {
+            filename: "IMG_20210820_133000_image.jpg".to_string(),
+            expected_datetime: chrono::Local.with_ymd_and_hms(2021, 8, 20, 13, 30, 0).unwrap()
+        }
+    ];
 
-    // Assert
-    assert!(result.is_ok());
-    let got_datetime = get_date_from_exif_from_file(File::open(&data.0)?)?;
-    let expected_datetime = chrono::Local
-        .with_ymd_and_hms(2021, 8, 20, 13, 30, 0)
-        .unwrap();
-    assert_eq!(got_datetime, expected_datetime);
+    for case in test_cases {
+        // Arrange
+        let data = create_jpeg_with_filename(&case.filename)?;
 
-    data.1.close()?;
+        // Expect error parsing date from exif as there is no metadata on the file
+        assert!(get_date_from_exif_from_file(File::open(&data.file)?).is_err());
+
+        // Act
+        let result = run(Args {
+            files: vec![data.file.to_str().unwrap().to_string()],
+            dryrun: false,
+            overwrite: true,
+        });
+
+        // Assert
+        assert!(result.is_ok());
+        let got_datetime = get_date_from_exif_from_file(File::open(&data.file)?)?;
+        assert_eq!(got_datetime, case.expected_datetime);
+
+        data.dir.close()?;
+    }
     Ok(())
 }
 
@@ -37,7 +54,7 @@ fn create_jpeg_with_filename(filename: &str) -> Result<TestData, Box<dyn std::er
 
     let img = RgbImage::new(32, 32);
     img.save_with_format(&file_path, ImageFormat::Jpeg)?;
-    Ok(TestData(file_path, dir))
+    Ok(TestData{file: file_path, dir})
 }
 
 fn get_date_from_exif_from_file(
