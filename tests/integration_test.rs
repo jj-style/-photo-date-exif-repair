@@ -6,22 +6,22 @@ use tempfile::{tempdir, TempDir};
 
 struct TestData {
     file: PathBuf,
-    dir: TempDir
+    dir: TempDir,
 }
 
 struct TestCaseHappy {
     filename: String,
-    expected_datetime: chrono::DateTime<chrono::Local> 
+    expected_datetime: chrono::DateTime<chrono::Local>,
 }
 
 #[test]
 fn test_set_date_from_filename_e2e() -> Result<(), Box<dyn std::error::Error>> {
-    let test_cases = vec![
-        TestCaseHappy {
-            filename: "IMG_20210820_133000_image.jpg".to_string(),
-            expected_datetime: chrono::Local.with_ymd_and_hms(2021, 8, 20, 13, 30, 0).unwrap()
-        }
-    ];
+    let test_cases = vec![TestCaseHappy {
+        filename: "IMG_20210820_133000_image.jpg".to_string(),
+        expected_datetime: chrono::Local
+            .with_ymd_and_hms(2021, 8, 20, 13, 30, 0)
+            .unwrap(),
+    }];
 
     for case in test_cases {
         // Arrange
@@ -54,7 +54,10 @@ fn create_jpeg_with_filename(filename: &str) -> Result<TestData, Box<dyn std::er
 
     let img = RgbImage::new(32, 32);
     img.save_with_format(&file_path, ImageFormat::Jpeg)?;
-    Ok(TestData{file: file_path, dir})
+    Ok(TestData {
+        file: file_path,
+        dir,
+    })
 }
 
 fn get_date_from_exif_from_file(

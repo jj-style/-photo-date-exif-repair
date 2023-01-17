@@ -149,11 +149,13 @@ fn get_date_from_file<'a>(path: &'a Path) -> Result<chrono::DateTime<chrono::Loc
                 (None, Some(_)) | (None, None) => date_string,
             };
 
-            Ok(dateparser::parse(&date_to_parse).map_err(|err| Error::DateParse {
-                parsing: date_to_parse,
-                filename: path.file_name().unwrap(),
-                reason: err.to_string(),
-            })?.with_timezone(&chrono::Local))
+            Ok(dateparser::parse(&date_to_parse)
+                .map_err(|err| Error::DateParse {
+                    parsing: date_to_parse,
+                    filename: path.file_name().unwrap(),
+                    reason: err.to_string(),
+                })?
+                .with_timezone(&chrono::Local))
         }
         None => Err(Error::NoDate(path.file_name().unwrap())),
     }
@@ -235,7 +237,11 @@ fn get_datetime_from_metadata(path: &Path) -> Option<chrono::DateTime<chrono::Lo
     match datetime_field {
         Some(date) => {
             let datetime_value = date.display_value().to_string();
-            Some(dateparser::parse(&datetime_value).ok()?.with_timezone(&chrono::Local))
+            Some(
+                dateparser::parse(&datetime_value)
+                    .ok()?
+                    .with_timezone(&chrono::Local),
+            )
         }
         None => None,
     }
