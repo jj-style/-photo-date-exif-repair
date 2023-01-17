@@ -59,7 +59,7 @@ pub fn run<'a>(args: Args) -> Result<(), Error<'a>> {
                 )
                 .yellow()
             );
-            let _delta = (exifdate - date).num_days();
+            //let _delta = (exifdate - date).num_days();
             // TODO - if delta > 1 set date?
             continue;
         }
@@ -82,7 +82,7 @@ pub fn run<'a>(args: Args) -> Result<(), Error<'a>> {
 }
 
 fn work(
-    r: Receiver<(PathBuf, chrono::DateTime<chrono::Utc>)>,
+    r: Receiver<(PathBuf, chrono::DateTime<chrono::Local>)>,
     i: u8,
     dryrun: bool,
     overwrite: bool,
@@ -138,7 +138,7 @@ fn work(
     };
 }
 
-fn get_date_from_file<'a>(path: &'a Path) -> Result<chrono::DateTime<chrono::Utc>, Error<'a>> {
+fn get_date_from_file<'a>(path: &'a Path) -> Result<chrono::DateTime<chrono::Local>, Error<'a>> {
     match extract_date_with_regex(path.to_str().unwrap()) {
         Some(date_string) => {
             let good_datetimes = get_date_time_parts(&date_string);
@@ -149,11 +149,11 @@ fn get_date_from_file<'a>(path: &'a Path) -> Result<chrono::DateTime<chrono::Utc
                 (None, Some(_)) | (None, None) => date_string,
             };
 
-            dateparser::parse(&date_to_parse).map_err(|err| Error::DateParse {
+            Ok(dateparser::parse(&date_to_parse).map_err(|err| Error::DateParse {
                 parsing: date_to_parse,
                 filename: path.file_name().unwrap(),
                 reason: err.to_string(),
-            })
+            })?.with_timezone(&chrono::Local))
         }
         None => Err(Error::NoDate(path.file_name().unwrap())),
     }
@@ -224,7 +224,7 @@ fn extract_date_with_regex(text: &str) -> Option<String> {
     }
 }
 
-fn get_datetime_from_metadata(path: &Path) -> Option<chrono::DateTime<chrono::Utc>> {
+fn get_datetime_from_metadata(path: &Path) -> Option<chrono::DateTime<chrono::Local>> {
     let file = std::fs::File::open(path).ok()?;
     let mut bufreader = std::io::BufReader::new(&file);
 
@@ -235,7 +235,7 @@ fn get_datetime_from_metadata(path: &Path) -> Option<chrono::DateTime<chrono::Ut
     match datetime_field {
         Some(date) => {
             let datetime_value = date.display_value().to_string();
-            dateparser::parse(&datetime_value).ok()
+            Some(dateparser::parse(&datetime_value).ok()?.with_timezone(&chrono::Local))
         }
         None => None,
     }

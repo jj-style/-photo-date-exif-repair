@@ -27,7 +27,7 @@ fn test_date_rename_e2e() -> Result<(), Box<dyn std::error::Error>> {
     // Assert
     assert!(result.is_ok());
     let got_datetime = get_date_from_exif_from_file(File::open(&file_path)?)?;
-    let expected_datetime = chrono::Utc
+    let expected_datetime = chrono::Local
         .with_ymd_and_hms(2021, 8, 20, 13, 30, 0)
         .unwrap();
     assert_eq!(got_datetime, expected_datetime);
@@ -37,9 +37,11 @@ fn test_date_rename_e2e() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+//fn create_jpeg_with_filename()
+
 fn get_date_from_exif_from_file(
     file: File,
-) -> Result<chrono::DateTime<chrono::Utc>, Box<dyn std::error::Error>> {
+) -> Result<chrono::DateTime<chrono::Local>, Box<dyn std::error::Error>> {
     let mut bufreader = std::io::BufReader::new(file);
     let exifreader = exif::Reader::new();
     let exif = exifreader.read_from_container(&mut bufreader)?;
@@ -47,7 +49,7 @@ fn get_date_from_exif_from_file(
     match datetime_field {
         Some(date) => {
             let datetime_value = date.display_value().to_string();
-            Ok(dateparser::parse(&datetime_value)?.with_timezone(&chrono::Utc))
+            Ok(dateparser::parse(&datetime_value)?.with_timezone(&chrono::Local))
         }
         None => Err(Box::from("no date in exif".to_string())),
     }
