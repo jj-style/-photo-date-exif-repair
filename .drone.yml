@@ -7,21 +7,26 @@ trigger:
     - master
 
 steps:
-  - name: buildBinary
+  - name: build
     image: rust:1.66
     pull: if-not-exists
     commands:
     - cargo build
 
-  - name: buildDocker
-    commands:
-    - docker build . -t photo-date-exif-repair
-  
   - name: test
     image: rust:1.66
     pull: if-not-exists
     commands:
-    - cargo test
-    depends_on:
-    - buildBinary
-    - buildDocker
+    - cargo test --verbose
+
+  - name: lint
+    image: rust:1.66
+    pull: if-not-exists
+    commands:
+    - cargo clippy -- -D warnings
+
+  - name: fmt
+    image: rust:1.66
+    pull: if-not-exists
+    commands:
+    - cargo fmt --all -- --check
