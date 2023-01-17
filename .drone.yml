@@ -26,6 +26,7 @@ steps:
     image: rust:1.66
     pull: if-not-exists
     commands:
+    - rustup component add clippy
     - cargo clippy -- -D warnings
     depends_on:
     - build
@@ -34,6 +35,7 @@ steps:
     image: rust:1.66
     pull: if-not-exists
     commands:
+    - rustup component add rustfmt
     - cargo fmt --all -- --check
     depends_on:
     - build
