@@ -12,21 +12,28 @@ steps:
     pull: if-not-exists
     commands:
     - cargo build
+    depends_on: []
 
   - name: test
     image: rust:1.66
     pull: if-not-exists
     commands:
     - cargo test --verbose
+    depends_on:
+    - build
 
   - name: lint
     image: rust:1.66
     pull: if-not-exists
     commands:
     - cargo clippy -- -D warnings
+    depends_on:
+    - build
 
   - name: fmt
     image: rust:1.66
     pull: if-not-exists
     commands:
     - cargo fmt --all -- --check
+    depends_on:
+    - build
