@@ -11,7 +11,7 @@ steps:
     image: rust:1.66
     pull: if-not-exists
     commands:
-      - cargo build
+    - cargo build
 
   - name: buildDocker
     commands:
@@ -21,7 +21,7 @@ steps:
     image: rust:1.66
     pull: if-not-exists
     commands:
-      cargo test
+    - cargo test
     depends_on:
     - buildBinary
     - buildDocker
