@@ -18,6 +18,7 @@ steps:
     image: rust:1.66
     pull: if-not-exists
     commands:
+    - apt-get update && apt-get install -y exiftool
     - cargo test --verbose
     depends_on:
     - build
