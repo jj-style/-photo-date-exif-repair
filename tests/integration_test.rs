@@ -16,12 +16,20 @@ struct TestCaseHappy {
 
 #[test]
 fn test_set_date_from_filename_e2e() -> Result<(), Box<dyn std::error::Error>> {
-    let test_cases = vec![TestCaseHappy {
-        filename: "IMG_20210820_133000_image.jpg".to_string(),
-        expected_datetime: chrono::Local
-            .with_ymd_and_hms(2021, 8, 20, 13, 30, 0)
-            .unwrap(),
-    }];
+    let test_cases = vec![
+        TestCaseHappy {
+            filename: "IMG_20210820_133000_image.jpg".to_string(),
+            expected_datetime: chrono::Local
+                .with_ymd_and_hms(2021, 8, 20, 13, 30, 0)
+                .unwrap(),
+        },
+        TestCaseHappy {
+            filename: "00100lrPORTRAIT_00100_BURST20210506122850023_COVER.jpg".to_string(),
+            expected_datetime: chrono::Local
+                .with_ymd_and_hms(2021, 5, 6, 12, 28, 50)
+                .unwrap(),
+        },
+    ];
 
     for case in test_cases {
         // Arrange
@@ -35,6 +43,7 @@ fn test_set_date_from_filename_e2e() -> Result<(), Box<dyn std::error::Error>> {
             files: vec![data.file.to_str().unwrap().to_string()],
             dryrun: false,
             overwrite: true,
+            ignore_existing_date: false,
         });
 
         // Assert

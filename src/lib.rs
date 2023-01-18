@@ -30,10 +30,15 @@ pub fn run<'a>(args: Args) -> Result<(), Error<'a>> {
     for file in args.files {
         let path = Path::new(&file);
 
+        let existing_date_in_exif = get_datetime_from_metadata(path);
+        if existing_date_in_exif.is_some() && args.ignore_existing_date {
+            continue;
+        }
+
         let date = match get_date_from_file(path) {
             Ok(d) => d,
             Err(err) => {
-                eprint!("{}", format!("{}", err).red());
+                eprintln!("{}", format!("{}", err).red());
                 continue;
             }
         };
@@ -47,7 +52,6 @@ pub fn run<'a>(args: Args) -> Result<(), Error<'a>> {
             .blue()
         );
 
-        let existing_date_in_exif = get_datetime_from_metadata(path);
         if let Some(exifdate) = existing_date_in_exif {
             println!(
                 "{}",
@@ -64,7 +68,7 @@ pub fn run<'a>(args: Args) -> Result<(), Error<'a>> {
         }
 
         if let Err(err) = s.send((path.to_path_buf(), date)) {
-            eprint!(
+            eprintln!(
                 "{}",
                 format!(
                     "error adding {:?} to queue: {}",
@@ -208,10 +212,9 @@ fn get_date_time_parts(input: &str) -> (Option<String>, Option<String>) {
 /// Extracts a possible datetime string from some text
 fn extract_date_with_regex(text: &str) -> Option<String> {
     lazy_static! {
-        static ref NORMAL_DATE_RE: Regex = Regex::new(
-            r#"^.*(20\d{2}[-_]?\d{2}[-_]?\d{2}[-_]?(\d{6}|\d{2}[-_]\d{2}[-_]\d{2})).*$"#
-        )
-        .unwrap();
+        static ref NORMAL_DATE_RE: Regex =
+            Regex::new(r#"^.*?(\d{4}[-_]?\d{2}[-_]?\d{2}[-_]?(\d{6}|\d{2}[-_]\d{2}[-_]\d{2})).*$"#)
+                .unwrap();
         static ref WHATSAPP_DATE_RE: Regex = Regex::new(r#"^.*(20\d{6})-WA.*$"#).unwrap();
     }
 
@@ -268,6 +271,10 @@ mod tests {
         cases.insert(
             "i_am_file_taken_at_20220504123000_find_me.jpg",
             Some("20220504123000".to_string()),
+        );
+        cases.insert(
+            "00100lrPORTRAIT_00100_BURST20210506122850023_COVER.jpg",
+            Some("20210506122850".to_string()),
         );
 
         // Act/Assert
