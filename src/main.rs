@@ -1,4 +1,3 @@
-use anyhow;
 use clap::Parser;
 use photo_date_exif_repair::{run, Args};
 

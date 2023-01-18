@@ -9,14 +9,13 @@ use crossbeam::channel::{unbounded, Receiver};
 
 use colored::Colorize;
 use regex::Regex;
-use threadpool;
 
 mod cli;
 pub use cli::Args;
 mod error;
 pub use error::Error;
 
-const DEFAULT_TIME: &'static str = "00:00:00";
+const DEFAULT_TIME: &str = "00:00:00";
 
 pub fn run<'a>(args: Args) -> Result<(), Error<'a>> {
     let (s, r) = unbounded();
@@ -31,7 +30,7 @@ pub fn run<'a>(args: Args) -> Result<(), Error<'a>> {
     for file in args.files {
         let path = Path::new(&file);
 
-        let date = match get_date_from_file(&path) {
+        let date = match get_date_from_file(path) {
             Ok(d) => d,
             Err(err) => {
                 eprint!("{}", format!("{}", err).red());
@@ -48,7 +47,7 @@ pub fn run<'a>(args: Args) -> Result<(), Error<'a>> {
             .blue()
         );
 
-        let existing_date_in_exif = get_datetime_from_metadata(&path);
+        let existing_date_in_exif = get_datetime_from_metadata(path);
         if let Some(exifdate) = existing_date_in_exif {
             println!(
                 "{}",
@@ -138,7 +137,7 @@ fn work(
     };
 }
 
-fn get_date_from_file<'a>(path: &'a Path) -> Result<chrono::DateTime<chrono::Local>, Error<'a>> {
+fn get_date_from_file(path: &Path) -> Result<chrono::DateTime<chrono::Local>, Error> {
     match extract_date_with_regex(path.to_str().unwrap()) {
         Some(date_string) => {
             let good_datetimes = get_date_time_parts(&date_string);
@@ -171,7 +170,7 @@ fn get_date_time_parts(input: &str) -> (Option<String>, Option<String>) {
         static ref DATETIME_NOT_SEPARATED: Regex =
             Regex::new(r#"^.*(\d{4}-\d{2}-\d{2})-?(\d{2}-?\d{2}-?\d{2}).*$"#).unwrap();
     }
-    let input = input.replace("_", "-");
+    let input = input.replace('_', "-");
 
     let split_date = |date: &str| format!("{}-{}-{}", &date[0..4], &date[4..6], &date[6..8]);
     let split_time = |time: &str| format!("{}:{}:{}", &time[0..2], &time[2..4], &time[4..6]);
@@ -183,7 +182,7 @@ fn get_date_time_parts(input: &str) -> (Option<String>, Option<String>) {
     if let Some(cap) = DATETIME_NOT_SEPARATED.captures(&input) {
         return (
             Some(cap[1].to_string()),
-            Some(split_time(&cap[2].to_string().replace("-", ""))),
+            Some(split_time(&cap[2].to_string().replace('-', ""))),
         );
     }
 
