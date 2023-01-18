@@ -212,9 +212,10 @@ fn get_date_time_parts(input: &str) -> (Option<String>, Option<String>) {
 /// Extracts a possible datetime string from some text
 fn extract_date_with_regex(text: &str) -> Option<String> {
     lazy_static! {
-        static ref NORMAL_DATE_RE: Regex =
-            Regex::new(r#"^.*?(\d{4}[-_]?\d{2}[-_]?\d{2}[-_]?(\d{6}|\d{2}[-_]\d{2}[-_]\d{2})).*$"#)
-                .unwrap();
+        static ref NORMAL_DATE_RE: Regex = Regex::new(
+            r#"^.*?((19|20)\d{2}[-_]?\d{2}[-_]?\d{2}[-_]?(\d{6}|\d{2}[-_]\d{2}[-_]\d{2})).*$"#
+        )
+        .unwrap();
         static ref WHATSAPP_DATE_RE: Regex = Regex::new(r#"^.*(20\d{6})-WA.*$"#).unwrap();
     }
 
