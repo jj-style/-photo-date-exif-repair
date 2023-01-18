@@ -90,55 +90,65 @@ fn work(
     dryrun: bool,
     overwrite: bool,
 ) {
-    let msg = match r.recv() {
-        Ok(d) => d,
-        Err(_err) => {
-            return;
+    loop {
+        let msg = match r.recv() {
+            Ok(d) => d,
+            Err(err) => {
+                let err_msg = err.to_string();
+                if err_msg.contains("empty and disconnected channel") {
+                    // want to exit thread silently, not error
+                    return;
+                }
+                eprintln!(
+                    "{}",
+                    format!("[thread {}] error receiving on queue: {}", i, err_msg).red()
+                );
+                continue;
+            }
+        };
+        println!(
+            "[thread {}] setting date={} for file={:?}",
+            i,
+            msg.1.to_rfc3339(),
+            msg.0.file_name().unwrap()
+        );
+        let mut cmd = Command::new("exiftool");
+
+        if overwrite {
+            cmd.arg("-overwrite_original");
         }
-    };
-    println!(
-        "[thread {}] setting date={} for file={:?}",
-        i,
-        msg.1.to_rfc3339(),
-        msg.0.file_name().unwrap()
-    );
-    let mut cmd = Command::new("exiftool");
 
-    if overwrite {
-        cmd.arg("-overwrite_original");
+        cmd.arg(format!("-AllDates=\"{}\"", msg.1.to_rfc3339(),))
+            .arg(format!("{}", msg.0.canonicalize().unwrap().display()))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null());
+
+        if dryrun {
+            println!("[dryrun] {:?}", cmd);
+        } else {
+            match cmd.status() {
+                Ok(_) => println!(
+                    "{}",
+                    format!(
+                        "[thread {}] successfully set date for {}",
+                        i,
+                        msg.0.display()
+                    )
+                    .green()
+                ),
+                Err(err) => eprintln!(
+                    "{}",
+                    format!(
+                        "[thread {}] error setting date for {}: {}",
+                        i,
+                        msg.0.display(),
+                        err
+                    )
+                    .red()
+                ),
+            };
+        }
     }
-
-    cmd.arg(format!("-AllDates=\"{}\"", msg.1.to_rfc3339(),))
-        .arg(format!("{}", msg.0.canonicalize().unwrap().display()))
-        .stdin(Stdio::null())
-        .stdout(Stdio::null());
-
-    if dryrun {
-        println!("[dryrun] {:?}", cmd);
-        return;
-    }
-
-    match cmd.status() {
-        Ok(_) => println!(
-            "{}",
-            format!(
-                "[thread {}] successfully set date for {}",
-                i,
-                msg.0.display()
-            )
-            .green()
-        ),
-        Err(err) => eprintln!(
-            "{}",
-            format!(
-                "[thread {}] error setting date for {}: {}",
-                i,
-                msg.0.display(),
-                err
-            )
-            .red()
-        ),
-    };
 }
 
 fn get_date_from_file(path: &Path) -> Result<chrono::DateTime<chrono::Local>, Error> {
